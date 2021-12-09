@@ -1,5 +1,13 @@
 # ML Subber
 
+Generate automated German subtitles using a machine learning generated language model.
+
+*ML Subber* is assembled as a container with all dependencies, such as the language models.
+Videos can thus be easily subtitled using the small script `generate-sub.sh`.
+
+**To get adequate results a further revision of the generated subtitles is recommended!**
+
+
 ## Resources
 
 - [AutoSub](https://github.com/abhirooptalasila/AutoSub)
