@@ -5,6 +5,8 @@
 ## @date   2021-12-09
 ##------------------------------------------------------------------------------
 
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
 
 stages:
   - build
