@@ -1,25 +1,28 @@
-#!/bin/sh
+#!/bin/bash
 ##------------------------------------------------------------------------------
-## start subbing a video
+## generate German subtitle of a video
 ##
 ## @author Lars Thoms
-## @date   2021-12-09
+## @date   2022-03-09
 ##------------------------------------------------------------------------------
 
-unset input output
+unset input output engine
 input="$(readlink -f "${1}")"
 output="${input%.*}.srt"
+engine="${2}"
 
-if [ "$#" -eq 1 ] && [ -f "${input}" ]
+if [ "$#" -eq 2 ] && [ -f "${input}" ]
 then
     touch "${output}"
     docker run --volume "${input}:/data/video.mp4:z" \
-               --volume "${output}:/data/output/video.srt:z" \
+               --volume "${output}:/data/video.srt:z" \
                --user "$(id -u "${USER}"):$(id -g "${USER}")" \
                --cap-drop all \
                ml-subber \
-               --file "/data/video.mp4"
+               "/data/video.mp4" \
+               "${engine}"
 else
-    printf "Usage: %s [INFILE]\n\n" "${0}"
-    printf "Example:\n %s video.mp4\n" "${0}"
+    printf "Usage: %s [FILE] [ENGINE]\n\n" "${0}"
+    printf "File:\n  %s video.mp4 ds\n\n" "${0}"
+    printf "Engines:\n  deepspeech (Mozilla DeepSpeech)\n  coqui (Coqui STT)\n  kaldi (Kaldi ASR)\n"
 fi
