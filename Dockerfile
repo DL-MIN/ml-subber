@@ -62,7 +62,12 @@ RUN pip3 install --no-cache-dir \
         six \
         tqdm \
         stt \
-        gdown
+        gdown \
+        matplotlib \
+        python_speech_features \
+        audiosegment \
+        rpunct \
+        librosa
 
 # clone repositories
 RUN git clone --depth 1 https://github.com/abhirooptalasila/AutoSub.git /opt/autosub &&\
@@ -92,7 +97,8 @@ RUN ./download_models.sh &&\
     gdown --output /data/AASHISHAG-v0.9.0.tflite 1MnjoAklMtJlpG1eDP6uD_Izvt36nPpiq
 
 # workaround
-RUN sed -i "s/from . import models/import models/" /opt/subtitle2go/punctuator2/models.py
+RUN sed -i "s/from . import models/import models/" /opt/subtitle2go/punctuator2/models.py &&\
+    sed -i "s/from rpunct.rpunct /from rpunct /" /opt/subtitle2go/subtitle2go.py
 
 COPY entrypoint.sh /entrypoint.sh
 COPY theanorc /data/.theanorc
