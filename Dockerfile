@@ -26,7 +26,9 @@ RUN apt-get update &&\
 # Install persistent packages
 RUN apt-get install -y --no-install-recommends \
         ffmpeg \
-        python3-pip
+        python3-minimal \
+        python3-dev \
+        python3-pkg-resources
 
 # Install temporary packages
 ARG BUILDDEPS="autoconf \
@@ -41,7 +43,7 @@ ARG BUILDDEPS="autoconf \
         make \
         patch \
         python2-minimal \
-        python3-dev \
+        python3-pip \
         sox \
         subversion \
         unzip \

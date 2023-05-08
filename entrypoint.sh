@@ -35,7 +35,7 @@ EXIT_CODE=143
 
 boot()
 {
-    . path.sh
+    . ./path.sh
     # Configure signal handlers
     trap 'SIGUSR1' USR1
     trap 'kill $!; SIGTERM' TERM
@@ -77,7 +77,7 @@ start()
 terminate()
 {
     (sleep ${TERMINATION_GRACE_PERIOD}; kill -s KILL "$1") &
-    kill -s TERM "$1"
+    kill -s TERM "$1" > /dev/null 2>&1
     wait "$1"
     code=$?
 
@@ -98,7 +98,7 @@ watchdog()
 {
     while :
     do
-        if kill -s 0 ${PID_APP}
+        if kill -s 0 ${PID_APP} > /dev/null 2>&1
         then
             sleep ${WATCHDOG_INTERVAL} &
             wait $!
@@ -137,6 +137,8 @@ SIGTERM()
 ##------------------------------------------------------------------------------
 ## Main
 ##------------------------------------------------------------------------------
+
+cd /app
 
 boot
 start
