@@ -1,2 +1,0 @@
-[blas]
-ldflags = -lf77blas -latlas -lgfortran

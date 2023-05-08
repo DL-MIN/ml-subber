@@ -1,25 +1,143 @@
 #!/bin/sh
+##------------------------------------------------------------------------------
+## Entrypoint for docker container
+## 
+## @author     Lars Thoms <lars@thoms.io>
+## @date       2023-05-08
+##------------------------------------------------------------------------------
 
-unset input output outputDir outputFile
-input="$(readlink -f "${1}")"
-output="${input%.*}.srt"
-outputDir="$(dirname "${output}")"
-outputFile="$(basename "${output%.*}.srt")"
+##------------------------------------------------------------------------------
+## Configuration
+##------------------------------------------------------------------------------
 
-case "${2}" in
-    "deepspeech")
-        python3 /opt/autosub/autosub/main.py --file "${input}" --format "srt" --engine "ds"
-        cat "${outputDir}/output/${outputFile}" > "${output}"
-        ;;
-    "coqui")
-        python3 /opt/autosub/autosub/main.py --file "${input}" --format "srt" --engine "stt"
-        cat "${outputDir}/output/${outputFile}" > "${output}"
-        ;;
-    "kaldi")
-        export KALDI_ROOT="/opt/subtitle2go/kaldi"
-        export LD_LIBRARY_PATH="${KALDI_ROOT}/src/lib:${KALDI_ROOT}/tools/openfst-1.6.7/lib:${LD_LIBRARY_PATH}"
-        export PATH="${KALDI_ROOT}/src/lmbin/:${KALDI_ROOT}/src/bin:${KALDI_ROOT}/tools/openfst/bin:${KALDI_ROOT}/src/fstbin/:${KALDI_ROOT}/src/gmmbin/:${KALDI_ROOT}/src/featbin/:${KALDI_ROOT}/src/lm/:${KALDI_ROOT}/src/sgmmbin/:${KALDI_ROOT}/src/sgmm2bin/:${KALDI_ROOT}/src/fgmmbin/:${KALDI_ROOT}/src/latbin/:${KALDI_ROOT}/src/nnetbin:${KALDI_ROOT}/src/nnet2bin/:${KALDI_ROOT}/src/online2bin/:${KALDI_ROOT}/src/ivectorbin/:${KALDI_ROOT}/src/kwsbin:${KALDI_ROOT}/src/nnet3bin:${KALDI_ROOT}/src/chainbin:${KALDI_ROOT}/tools/sph2pipe_v2.5/:${KALDI_ROOT}/src/rnnlmbin:${PWD}:${PATH}"
-        cd /opt/subtitle2go || exit 1
-        python3 subtitle2go.py --subtitle "srt" "${input}"
-        ;;
-esac
+# PID of application
+PID_APP=0
+
+# CMD of container
+CMD="$*"
+
+# Grace period of SIGTERM, until SIGKILL is triggered (in seconds)
+TERMINATION_GRACE_PERIOD=30
+
+# Watchdog interval, to detect a not running process (in seconds)
+WATCHDOG_INTERVAL=10
+
+# Exit code in case of an SIGTERM
+EXIT_CODE=143
+
+
+##------------------------------------------------------------------------------
+## Boot
+## 
+## Copy configuration and modification files (e.g. theme adjustments) and
+## set up the environment for the service.
+##------------------------------------------------------------------------------
+
+boot()
+{
+    . path.sh
+    # Configure signal handlers
+    trap 'SIGUSR1' USR1
+    trap 'kill $!; SIGTERM' TERM
+}
+
+
+##------------------------------------------------------------------------------
+## Start
+## 
+## Execute service binaries and schedulars.
+##------------------------------------------------------------------------------
+
+start()
+{
+    # Execute application
+    {
+        python3 subtitle2go.py /data/${CMD:-*.mp4}
+        for file in /data/${CMD:-*.mp4}
+        do
+            if [ -f "$file" ]
+            then
+                ffmpeg -i "${file%.*}.vtt" "${file%.*}.srt"
+                chmod --reference="${file}" "${file%.*}.vtt" "${file%.*}.srt"
+                chown --reference="${file}" "${file%.*}.vtt" "${file%.*}.srt"
+            fi
+        done
+    } &
+    PID_APP=$!
+}
+
+
+##------------------------------------------------------------------------------
+## Terminate
+## 
+## Kill the service with SIGTERM. If the process does not respond during
+## the defined grace period, a SIGKILL will be sent.
+##------------------------------------------------------------------------------
+
+terminate()
+{
+    (sleep ${TERMINATION_GRACE_PERIOD}; kill -s KILL "$1") &
+    kill -s TERM "$1"
+    wait "$1"
+    code=$?
+
+    if [ $? -lt ${code} ]
+    then
+        EXIT_CODE=${code}
+    fi
+}
+
+
+##------------------------------------------------------------------------------
+## Watchdog
+## 
+## In case of an absent service process the container will be halted gracefully.
+##------------------------------------------------------------------------------
+
+watchdog()
+{
+    while :
+    do
+        if kill -s 0 ${PID_APP}
+        then
+            sleep ${WATCHDOG_INTERVAL} &
+            wait $!
+        else
+            SIGTERM
+        fi
+    done
+}
+
+
+##------------------------------------------------------------------------------
+## Signal handler
+## 
+## SIGUSR1: an user defined signal, which can be used for running adhoc tasks,
+##          e.g. reloading configuration files or exporting data.
+##
+## SIGTERM: tell service processes to shutdown gracefully
+##------------------------------------------------------------------------------
+
+SIGUSR1()
+{
+    terminate ${PID_APP}
+
+    start
+}
+
+
+SIGTERM()
+{
+    terminate ${PID_APP}
+
+    exit ${EXIT_CODE}
+}
+
+
+##------------------------------------------------------------------------------
+## Main
+##------------------------------------------------------------------------------
+
+boot
+start
+watchdog

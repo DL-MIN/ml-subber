@@ -1,108 +1,90 @@
 ##------------------------------------------------------------------------------
-## ML Subber DeepSpeech / Coqui STT containerfile
+## ML-Subber dockerfile
 ##
-## @author Lars Thoms
-## @date   2022-03-09
+## @author     Lars Thoms <lars@thoms.io>
+## @date       2023-05-08
 ##------------------------------------------------------------------------------
 
-FROM debian:stable-slim
+##------------------------------------------------------------------------------
+## Build
+##------------------------------------------------------------------------------
 
-ARG pykaldi_url="https://ltdata1.informatik.uni-hamburg.de/pykaldi/pykaldi-0.2.2-cp39-cp39-linux_x86_64.whl"
-ARG pykaldi_file="pykaldi-0.2.2-cp39-cp39-linux_x86_64.whl"
+# Base image
+FROM debian:stable-slim as build
 
-ENV PYTHONUNBUFFERED 1
+# Environment variables during build
 ENV DEBIAN_FRONTEND=noninteractive
+ENV MAKEFLAGS="-j$(nproc)"
 
-# install packages
+# Modify repository
+RUN sed -i -e 's/ main/ main contrib/g' /etc/apt/sources.list
+
+# Update base system
 RUN apt-get update &&\
-    apt-get install -y --no-install-recommends \
-        python-is-python3 \
-        python3-minimal \
-        python3-pip \
-        python3-dev \
-        g++ \
-        make \
+    apt-get dist-upgrade -y
+
+# Install persistent packages
+RUN apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3-pip
+
+# Install temporary packages
+ARG BUILDDEPS="autoconf \
         automake \
-        autoconf \
-        patch \
         bzip2 \
-        unzip \
-        sox \
+        ca-certificates \
+        g++ \
         gfortran \
-        libtool \
-        subversion \
-        python2.7 \
-        zlib1g-dev \
-        libatlas-base-dev \
         git \
-        wget \
-        ffmpeg
+        libatlas-base-dev \
+        libtool \
+        make \
+        patch \
+        python2-minimal \
+        python3-dev \
+        sox \
+        subversion \
+        unzip \
+        wget"
+RUN apt-get install -y --no-install-recommends ${BUILDDEPS}
 
-# download pykaldi wheel
-RUN wget "${pykaldi_url}" -O "/opt/${pykaldi_file}"
+# Install Subtitle2go
+RUN git clone --depth=1 https://github.com/uhh-lt/subtitle2go.git /app &&\
+    pip3 install --no-cache-dir --use-pep517 --no-compile --use-feature=fast-deps -r /app/requirements.txt
 
-# install Python3 packages
-RUN pip3 install --no-cache-dir \
-        /opt/${pykaldi_file} \
-        numpy \
-        pyyaml \
-        ffmpeg-python \
-        theano \
-        spacy \
-        pdfplumber \
-        cycler \
-        deepspeech \
-        joblib \
-        kiwisolver \
-        pydub \
-        pyparsing \
-        python-dateutil \
-        scikit-learn \
-        scipy \
-        six \
-        tqdm \
-        stt \
-        gdown \
-        matplotlib \
-        python_speech_features \
-        audiosegment \
-        rpunct \
-        librosa
+# Install Kaldi
+WORKDIR /app
+RUN sed -i -r 's@^\./configure .*$@\./configure --shared --static-math=yes --mathlib=ATLAS@' install_kaldi.sh &&\
+    ./install_kaldi.sh
 
-# clone repositories
-RUN git clone --depth 1 https://github.com/abhirooptalasila/AutoSub.git /opt/autosub &&\
-    git clone --depth 1 https://github.com/uhh-lt/subtitle2go.git /opt/subtitle2go &&\
-    git clone --depth 1 https://github.com/ottokart/punctuator2.git /opt/subtitle2go/punctuator2 &&\
-    git clone --depth 1 --branch pykaldi_02 https://github.com/pykaldi/kaldi.git /opt/subtitle2go/kaldi
+# Download language models
+RUN python3 -m spacy download de_core_news_lg &&\
+    python3 -m spacy download en_core_web_lg &&\
+    ./download_models.sh
 
-# build kaldi
-WORKDIR /opt/subtitle2go/kaldi/tools
-RUN ./extras/check_dependencies.sh &&\
-    make -j $(nproc) &&\
-    cd ../src &&\
-    ./configure --shared --static-math=yes --mathlib=ATLAS &&\
-    make depend -j $(nproc) &&\
-    make -j $(nproc)
+# Create data directory
+RUN mkdir /data
 
-# create work directories
-RUN mkdir -p /data/audio /data/output /opt/subtitle2go/tmp &&\
-    chmod -R u=rwX,g=rwX,o=rwX /data /opt/subtitle2go/tmp
+# Add entrypoint script
+COPY entrypoint.sh /
+RUN chmod +x /entrypoint.sh
 
-# download pretrained models
-WORKDIR /opt/subtitle2go
-RUN ./download_models.sh &&\
-    python3 -m spacy download de_core_news_lg &&\
-    gdown --output /data/AASHISHAG-v0.9.0.scorer 1BY-G-W3bwuVvEWy7Gg_sR7gMSqDmC1pi &&\
-    gdown --output /data/AASHISHAG-v0.9.0.pbmm   1tqO44LMOkYYxGcCABrfZF-RYJ9VileV0 &&\
-    gdown --output /data/AASHISHAG-v0.9.0.tflite 1MnjoAklMtJlpG1eDP6uD_Izvt36nPpiq
+# Delete temporary packages
+RUN apt-get autoremove -y ${BUILDDEPS}
 
-# workaround
-RUN sed -i "s/from . import models/import models/" /opt/subtitle2go/punctuator2/models.py &&\
-    sed -i "s/from rpunct.rpunct /from rpunct /" /opt/subtitle2go/subtitle2go.py
+# Clean and harden container
+COPY clean.sh /
+RUN sh /clean.sh
 
-COPY entrypoint.sh /entrypoint.sh
-COPY theanorc /data/.theanorc
 
-WORKDIR /data
-ENV HOME=/data
+##------------------------------------------------------------------------------
+## Production
+##------------------------------------------------------------------------------
+
+# Copy results from build image
+FROM scratch
+COPY --from=build / /
+
+# Base configuration
+WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
