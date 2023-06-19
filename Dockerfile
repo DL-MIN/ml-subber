@@ -10,14 +10,17 @@
 ##------------------------------------------------------------------------------
 
 # Base image
-FROM debian:stable-slim as build
+FROM debian:bookworm-slim as build
+
+# Explicit shell configuration
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Environment variables during build
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MAKEFLAGS="-j$(nproc)"
 
 # Modify repository
-RUN sed -i -e 's/ main/ main contrib/g' /etc/apt/sources.list
+RUN sed -i -e 's/ main/ main contrib/g' /etc/apt/sources.list.d/debian.sources
 
 # Update base system
 RUN apt-get update &&\
@@ -49,6 +52,9 @@ ARG BUILDDEPS="autoconf \
         unzip \
         wget"
 RUN apt-get install -y --no-install-recommends ${BUILDDEPS}
+
+# Break PEP 668
+RUN rm "$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDEST'))")/EXTERNALLY-MANAGED"
 
 # Install Subtitle2go
 RUN git clone --depth=1 https://github.com/uhh-lt/subtitle2go.git /app &&\
